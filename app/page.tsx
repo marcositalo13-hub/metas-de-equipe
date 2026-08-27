@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import type { SupabaseClient } from "@supabase/supabase-js";
+import type { RealtimePostgresChangesPayload, SupabaseClient } from "@supabase/supabase-js";
 import confetti from "canvas-confetti";
 import { getSupabase, isSupabaseConfigured } from "@/lib/supabase";
 import { PESSOAS, getPessoa } from "@/lib/pessoas";
