@@ -8,7 +8,8 @@ gráficos de evolução mensal no ano corrente.
 
 - Next.js (App Router) + TypeScript
 - Tailwind CSS
-- Supabase (`@supabase/supabase-js`, acesso direto pelo client, sem autenticação)
+- Supabase (`@supabase/supabase-js`, acesso direto pelo client, sem autenticação) — banco,
+  Storage e Realtime (sincronização entre aparelhos)
 - Recharts (gráficos)
 - Framer Motion (animações)
 - canvas-confetti (comemoração ao bater meta)
@@ -50,6 +51,12 @@ sensíveis expostos publicamente.
 4. Cole e execute também o conteúdo de [`supabase/storage-policies.sql`](./supabase/storage-policies.sql)
    — cria o bucket `fotos` (público) usado para as fotos de perfil e libera leitura pública e
    upload/atualização para o papel `anon`, pelo mesmo motivo acima.
+5. Cole e execute também o conteúdo de [`supabase/realtime-setup.sql`](./supabase/realtime-setup.sql)
+   — habilita o Supabase Realtime na tabela `metas`, para que uma marcação feita em um aparelho
+   apareça automaticamente nos outros. Em projetos novos do Supabase isso costuma já vir
+   habilitado por padrão; o script é idempotente (não dá erro se já estiver habilitado). Sem
+   esse passo o app continua funcionando normalmente, só que sem sincronizar em tempo real
+   entre aparelhos — só ao recarregar a página.
 
 ## Variáveis de ambiente
 

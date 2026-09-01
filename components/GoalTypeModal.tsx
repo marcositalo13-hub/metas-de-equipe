@@ -2,18 +2,18 @@
 
 import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Pessoa, TipoMeta } from "@/lib/types";
+import { Meta, Pessoa, TipoMeta } from "@/lib/types";
 import { TIPO_META_COLORS, TIPO_META_LABELS, TIPOS_META } from "@/lib/tipos-meta";
 import Avatar from "./Avatar";
-import CheckIcon from "./CheckIcon";
 import TrashIcon from "./TrashIcon";
 
 interface GoalTypeModalProps {
   aberto: boolean;
   pessoa: Pessoa;
   dateLabel: string;
-  tiposMarcados: TipoMeta[];
-  onToggle: (tipo: TipoMeta) => void;
+  metasNoDia: Meta[];
+  onAdd: (tipo: TipoMeta) => void;
+  onDelete: (id: string) => void;
   onClose: () => void;
 }
 
@@ -21,22 +21,17 @@ export default function GoalTypeModal({
   aberto,
   pessoa,
   dateLabel,
-  tiposMarcados,
-  onToggle,
+  metasNoDia,
+  onAdd,
+  onDelete,
   onClose,
 }: GoalTypeModalProps) {
-  // Tipo (M/S) para o qual a confirmação de exclusão está aberta neste
-  // instante — no máximo um por vez. Reseta sozinho porque o modal desmonta
-  // ao fechar (ver app/page.tsx: `{diaSelecionado && <GoalTypeModal .../>}`).
-  const [confirmandoExclusao, setConfirmandoExclusao] = useState<TipoMeta | null>(null);
+  // ID do registro cuja confirmação de exclusão está aberta (no máximo um).
+  const [confirmandoId, setConfirmandoId] = useState<string | null>(null);
 
-  function pedirExclusao(tipo: TipoMeta) {
-    setConfirmandoExclusao(tipo);
-  }
-
-  function confirmarExclusao(tipo: TipoMeta) {
-    onToggle(tipo);
-    setConfirmandoExclusao(null);
+  function confirmarExclusao(id: string) {
+    onDelete(id);
+    setConfirmandoId(null);
   }
 
   return (
@@ -57,7 +52,8 @@ export default function GoalTypeModal({
             transition={{ type: "spring", stiffness: 350, damping: 26 }}
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center gap-3 mb-1">
+            {/* Cabeçalho */}
+            <div className="flex items-center gap-3 mb-4">
               <Avatar pessoa={pessoa} size={48} />
               <div>
                 <p className="text-white font-black text-lg leading-tight">{pessoa.nome}</p>
@@ -65,91 +61,106 @@ export default function GoalTypeModal({
               </div>
             </div>
 
-            <p className="text-white/80 text-xs mt-3 mb-3">
-              Toque para marcar. Já marcada: toque no ícone de lixeira para excluir.
-            </p>
-
-            <div className="grid grid-cols-2 gap-4">
+            {/* Botões de adicionar — sempre inserem um novo registro */}
+            <p className="text-white/70 text-xs mb-2 font-medium">Adicionar marcação:</p>
+            <div className="grid grid-cols-2 gap-3">
               {TIPOS_META.map((tipo) => {
-                const marcado = tiposMarcados.includes(tipo);
-                const confirmando = confirmandoExclusao === tipo;
                 const cor = TIPO_META_COLORS[tipo];
-
+                const count = metasNoDia.filter((m) => m.tipo === tipo).length;
                 return (
-                  <div key={tipo} className="relative">
-                    {confirmando ? (
-                      // Estado de confirmação: substitui o card, com botões
-                      // "Excluir" / "Cancelar" em área de toque própria —
-                      // nunca a mesma área do botão de marcar/desmarcar.
-                      <div
-                        className="rounded-2xl py-4 px-2 flex flex-col items-center justify-center gap-2 text-white shadow-lg h-full"
-                        style={{ backgroundColor: "rgba(127, 29, 29, 0.92)", boxShadow: "0 0 0 2px rgba(248,113,113,0.6)" }}
-                      >
-                        <p className="text-[11px] font-bold text-center leading-tight">
-                          Excluir esta marcação {tipo}?
-                        </p>
-                        <div className="flex gap-2">
-                          <button
-                            type="button"
-                            onClick={() => confirmarExclusao(tipo)}
-                            className="px-3 py-1.5 rounded-full bg-red-500 hover:bg-red-600 text-white text-[11px] font-bold transition-colors"
-                          >
-                            Excluir
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setConfirmandoExclusao(null)}
-                            className="px-3 py-1.5 rounded-full bg-white/20 hover:bg-white/30 text-white text-[11px] font-bold transition-colors"
-                          >
-                            Cancelar
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <>
-                        <motion.button
-                          type="button"
-                          // Marcar só faz algo quando ainda não está marcada —
-                          // remover agora é só pelo ícone de lixeira (com
-                          // confirmação), então essa área de toque nunca
-                          // exclui nada por engano.
-                          onClick={() => {
-                            if (!marcado) onToggle(tipo);
-                          }}
-                          whileHover={{ scale: marcado ? 1 : 1.06 }}
-                          whileTap={{ scale: marcado ? 1 : 0.94 }}
-                          className="w-full rounded-2xl py-6 flex flex-col items-center justify-center gap-1 font-black text-2xl text-white shadow-lg transition-all"
-                          style={{
-                            backgroundColor: marcado ? cor : `${cor}33`,
-                            boxShadow: marcado
-                              ? `0 0 0 3px white, 0 8px 20px ${cor}88`
-                              : `0 0 0 2px ${cor}55 inset`,
-                            cursor: marcado ? "default" : "pointer",
-                          }}
-                        >
-                          <span>{tipo}</span>
-                          <span className="flex items-center gap-1 text-[11px] font-semibold opacity-90">
-                            {marcado && <CheckIcon size={11} />}
-                            {marcado ? "batida" : TIPO_META_LABELS[tipo]}
-                          </span>
-                        </motion.button>
-
-                        {marcado && (
-                          <button
-                            type="button"
-                            onClick={() => pedirExclusao(tipo)}
-                            className="absolute -top-2 -right-2 w-7 h-7 rounded-full bg-red-500 hover:bg-red-600 text-white flex items-center justify-center shadow-md border-2 border-white/85 transition-transform hover:scale-110 active:scale-95"
-                            aria-label={`Excluir marcação ${tipo} de ${pessoa.nome}`}
-                          >
-                            <TrashIcon size={13} />
-                          </button>
-                        )}
-                      </>
-                    )}
-                  </div>
+                  <motion.button
+                    key={tipo}
+                    type="button"
+                    onClick={() => onAdd(tipo)}
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.94 }}
+                    className="rounded-2xl py-4 flex flex-col items-center justify-center gap-1 font-black text-2xl text-white shadow-lg transition-all"
+                    style={{
+                      backgroundColor: `${cor}44`,
+                      boxShadow: `0 0 0 2px ${cor}88 inset`,
+                    }}
+                  >
+                    <span>{tipo}</span>
+                    <span className="text-[11px] font-semibold opacity-80">
+                      {TIPO_META_LABELS[tipo]}
+                      {count > 0 && (
+                        <span className="ml-1 font-black" style={{ color: cor }}>
+                          ×{count}
+                        </span>
+                      )}
+                    </span>
+                  </motion.button>
                 );
               })}
             </div>
+
+            {/* Lista de marcações existentes com exclusão individual */}
+            {metasNoDia.length > 0 && (
+              <div className="mt-4">
+                <p className="text-white/70 text-xs mb-2 font-medium">
+                  Marcações registradas ({metasNoDia.length}):
+                </p>
+                <div className="flex flex-col gap-1.5 max-h-48 overflow-y-auto">
+                  {metasNoDia.map((meta, idx) => {
+                    const cor = TIPO_META_COLORS[meta.tipo];
+                    const confirmando = confirmandoId === meta.id;
+                    return (
+                      <div
+                        key={meta.id}
+                        className="flex items-center justify-between rounded-xl px-3 py-2"
+                        style={{ backgroundColor: "rgba(255,255,255,0.08)" }}
+                      >
+                        {confirmando ? (
+                          <div className="flex items-center justify-between w-full gap-2">
+                            <span className="text-white/80 text-xs font-semibold">
+                              Excluir marcação #{idx + 1}?
+                            </span>
+                            <div className="flex gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => confirmarExclusao(meta.id)}
+                                className="px-2.5 py-1 rounded-full bg-red-500 hover:bg-red-600 text-white text-[11px] font-bold transition-colors"
+                              >
+                                Excluir
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setConfirmandoId(null)}
+                                className="px-2.5 py-1 rounded-full bg-white/20 hover:bg-white/30 text-white text-[11px] font-bold transition-colors"
+                              >
+                                Cancelar
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="flex items-center gap-2">
+                              <span
+                                className="rounded-full w-6 h-6 flex items-center justify-center text-xs font-black text-white"
+                                style={{ backgroundColor: cor }}
+                              >
+                                {meta.tipo}
+                              </span>
+                              <span className="text-white/80 text-xs">
+                                {TIPO_META_LABELS[meta.tipo]} #{idx + 1}
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setConfirmandoId(meta.id)}
+                              className="w-7 h-7 rounded-full bg-red-500/20 hover:bg-red-500/50 text-red-300 hover:text-white flex items-center justify-center transition-all hover:scale-110 active:scale-95"
+                              aria-label={`Excluir marcação ${meta.tipo} #${idx + 1}`}
+                            >
+                              <TrashIcon size={13} />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             <button
               onClick={onClose}

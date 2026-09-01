@@ -55,6 +55,36 @@ async function buscarMetas(
   }
 }
 
+/**
+ * Incorpora um evento do Supabase Realtime (INSERT/UPDATE/DELETE na tabela
+ * `metas`) diretamente no array local — sem refazer a busca completa no
+ * banco. Função pura: recebe o array anterior e devolve o novo, para ser
+ * usada como `setMetas((prev) => mesclarEventoRealtime(prev, payload))`.
+ * Idempotente por `id`, então é seguro receber o mesmo evento mais de uma
+ * vez (ex: a própria mudança otimista do cliente que a originou).
+ */
+function mesclarEventoRealtime(
+  prev: Meta[],
+  payload: RealtimePostgresChangesPayload<Meta>
+): Meta[] {
+  if (payload.eventType === "INSERT" || payload.eventType === "UPDATE") {
+    const registro = payload.new;
+    if (!("id" in registro) || !registro.id) return prev;
+    const jaExiste = prev.some((m) => m.id === registro.id);
+    return jaExiste
+      ? prev.map((m) => (m.id === registro.id ? registro : m))
+      : [...prev, registro];
+  }
+
+  if (payload.eventType === "DELETE") {
+    const antigo = payload.old;
+    if (!("id" in antigo) || !antigo.id) return prev;
+    return prev.filter((m) => m.id !== antigo.id);
+  }
+
+  return prev;
+}
+
 export default function Home() {
   const configurado = isSupabaseConfigured();
 
@@ -83,6 +113,32 @@ export default function Home() {
     );
   }, [configurado]);
 
+  // Tempo real: qualquer INSERT/UPDATE/DELETE na tabela `metas` — feito por
+  // este cliente ou por outro aparelho — chega aqui e é incorporado direto
+  // no estado local, sem refazer a busca completa. Calendário, ranking e
+  // gráficos são todos derivados de `metas`, então atualizam juntos.
+  useEffect(() => {
+    if (!configurado) return;
+    const supabase = getSupabase();
+    if (!supabase) return;
+
+    const canal = supabase
+      .channel("metas-realtime")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "metas" },
+        (payload: RealtimePostgresChangesPayload<Meta>) => {
+          setMetas((prev) => mesclarEventoRealtime(prev, payload));
+        }
+      )
+      .subscribe();
+
+    // Fecha a subscription ao desmontar, para não vazar conexões.
+    return () => {
+      supabase.removeChannel(canal);
+    };
+  }, [configurado]);
+
   function tentarNovamenteCarregar() {
     const supabase = getSupabase();
     if (!supabase) return;
@@ -98,34 +154,19 @@ export default function Home() {
 
   const anoAtualParaGraficos = hoje.getFullYear();
 
-  const tiposMarcadosNoDia = useMemo(() => {
+  const metasNoDia = useMemo(() => {
     if (!diaSelecionado) return [];
-    return metas
-      .filter((m) => m.pessoa === pessoaSelecionada && m.data === diaSelecionado)
-      .map((m) => m.tipo);
+    return metas.filter(
+      (m) => m.pessoa === pessoaSelecionada && m.data === diaSelecionado
+    );
   }, [metas, pessoaSelecionada, diaSelecionado]);
 
-  async function handleToggle(tipo: TipoMeta) {
+  async function handleAdd(tipo: TipoMeta) {
     if (!diaSelecionado) return;
     const supabase = getSupabase();
     if (!supabase) return;
 
-    const existente = metas.find(
-      (m) => m.pessoa === pessoaSelecionada && m.tipo === tipo && m.data === diaSelecionado
-    );
-
-    if (existente) {
-      // Remove (toggle off)
-      setMetas((prev) => prev.filter((m) => m.id !== existente.id));
-      const { error } = await supabase.from("metas").delete().eq("id", existente.id);
-      if (error) {
-        setErroAcao(error.message);
-        setMetas((prev) => [...prev, existente]);
-      }
-      return;
-    }
-
-    // Insere (toggle on)
+    // Sempre insere um novo registro — sem verificar duplicatas.
     const otimista: Meta = {
       id: `tmp-${Date.now()}-${Math.random()}`,
       pessoa: pessoaSelecionada,
@@ -151,7 +192,28 @@ export default function Home() {
       setErroAcao(error.message);
       setMetas((prev) => prev.filter((m) => m.id !== otimista.id));
     } else if (data) {
-      setMetas((prev) => prev.map((m) => (m.id === otimista.id ? (data as Meta) : m)));
+      const real = data as Meta;
+      setMetas((prev) => {
+        const semOtimista = prev.filter((m) => m.id !== otimista.id);
+        // O evento de Realtime deste mesmo insert pode já ter chegado
+        // (assíncrono, sem ordem garantida em relação a esta resposta) —
+        // evita duplicar a marcação nesse caso.
+        const jaVeioPeloRealtime = semOtimista.some((m) => m.id === real.id);
+        return jaVeioPeloRealtime ? semOtimista : [...semOtimista, real];
+      });
+    }
+  }
+
+  async function handleDelete(id: string) {
+    const supabase = getSupabase();
+    if (!supabase) return;
+    const existente = metas.find((m) => m.id === id);
+    if (!existente) return;
+    setMetas((prev) => prev.filter((m) => m.id !== id));
+    const { error } = await supabase.from("metas").delete().eq("id", id);
+    if (error) {
+      setErroAcao(error.message);
+      setMetas((prev) => [...prev, existente]);
     }
   }
 
@@ -262,8 +324,9 @@ export default function Home() {
           aberto={!!diaSelecionado}
           pessoa={pessoaAtual}
           dateLabel={dataLabelModal}
-          tiposMarcados={tiposMarcadosNoDia}
-          onToggle={handleToggle}
+          metasNoDia={metasNoDia}
+          onAdd={handleAdd}
+          onDelete={handleDelete}
           onClose={() => setDiaSelecionado(null)}
         />
       )}
